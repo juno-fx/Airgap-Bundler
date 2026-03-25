@@ -21,7 +21,7 @@ This script:
 1. Pulls Docker images and saves them as tar files
 2. Clones Git repositories as bare repositories
 3. Creates a docker-compose.yaml and load.sh script
-4. Packages everything into `airgap-bundle-YYYYMMDDHHMMSS.tar.gz`
+4. Packages everything into `airgap-bundle.tar.gz`
 
 ### Prerequisites
 - Docker must be installed and running
@@ -174,8 +174,8 @@ set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TIMESTAMP=$(date +%Y%m%d%H%M%S)
-BUNDLE_NAME="airgap-bundle-${TIMESTAMP}"
-WORK_DIR="${SCRIPT_DIR}/${BUNDLE_NAME}"
+BUNDLE_NAME="airgap-bundle"
+WORK_DIR="${SCRIPT_DIR}/${BUNDLE_NAME}-${TIMESTAMP}"
 
 GIT_REPOS=(
     "https://github.com/example/repo1.git"

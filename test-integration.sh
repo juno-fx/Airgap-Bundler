@@ -3,8 +3,10 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TEST_DIR="${SCRIPT_DIR}/.test-integration"
-BUNDLE_PATTERN="airgap-bundle-*.tar.gz"
+BUNDLE_PATTERN="airgap-bundle*.tar.gz"
 BUNDLE_DIR=""
+IMAGES_FILE="images.txt"
+IMAGES_FILE_BACKUP=""
 
 cleanup() {
     local exit_code=$?
@@ -16,6 +18,10 @@ cleanup() {
         if [ -f docker-compose.yaml ]; then
             docker compose down --volumes 2>/dev/null || true
         fi
+    fi
+    
+    if [ -n "${IMAGES_FILE_BACKUP:-}" ] && [ -f "${IMAGES_FILE_BACKUP}" ]; then
+        mv "${IMAGES_FILE_BACKUP}" "${SCRIPT_DIR}/${IMAGES_FILE}"
     fi
     
     rm -rf "${TEST_DIR}"
@@ -30,10 +36,25 @@ trap cleanup EXIT
 echo "=== Integration Test Suite ==="
 echo ""
 
+echo "=== Step 0: Setup test images.txt ==="
+if [ -f "${SCRIPT_DIR}/${IMAGES_FILE}" ]; then
+    IMAGES_FILE_BACKUP="${SCRIPT_DIR}/${IMAGES_FILE}.test-backup"
+    mv "${SCRIPT_DIR}/${IMAGES_FILE}" "${IMAGES_FILE_BACKUP}"
+fi
+
+cat > "${SCRIPT_DIR}/${IMAGES_FILE}" << 'EOF'
+alpine:latest
+busybox:latest
+EOF
+
+echo "Created test images.txt with:"
+cat "${SCRIPT_DIR}/${IMAGES_FILE}"
+echo ""
+
 echo "=== Step 1: Build the bundle ==="
 ./build-bundle.sh
 
-BUNDLE_FILE=$(find . -maxdepth 1 -name "airgap-bundle-*.tar.gz" -type f 2>/dev/null | head -n1)
+BUNDLE_FILE=$(find . -maxdepth 1 -name "airgap-bundle*.tar.gz" -type f 2>/dev/null | head -n1)
 if [ -z "${BUNDLE_FILE}" ]; then
     echo "ERROR: No bundle file created"
     exit 1
@@ -45,13 +66,24 @@ echo "=== Step 2: Extract bundle ==="
 mkdir -p "${TEST_DIR}"
 tar -xzf "${BUNDLE_FILE}" -C "${TEST_DIR}"
 
-BUNDLE_DIR=$(find "${TEST_DIR}" -maxdepth 1 -name "airgap-bundle-*" -type d 2>/dev/null | head -n1)
+BUNDLE_DIR=$(find "${TEST_DIR}" -maxdepth 1 -name "airgap-bundle*" -type d 2>/dev/null | head -n1)
 if [ -z "${BUNDLE_DIR}" ]; then
     echo "ERROR: Bundle extraction failed"
     exit 1
 fi
 cd "${BUNDLE_DIR}"
 echo "Extracted to: ${BUNDLE_DIR}"
+echo ""
+
+echo "=== Step 2.1: Verify registry-images directory ==="
+if [ -d "registry-images" ]; then
+    REGISTRY_IMAGE_COUNT=$(find registry-images -maxdepth 1 -name "*.tar" | wc -l)
+    echo "Registry images directory exists with ${REGISTRY_IMAGE_COUNT} tar files"
+    ls -la registry-images/
+else
+    echo "ERROR: registry-images directory not found"
+    exit 1
+fi
 echo ""
 
 echo "=== Step 3: Start services (load.sh) ==="
@@ -90,7 +122,29 @@ fi
 
 echo ""
 
-echo "=== Step 5: Test Git Server ==="
+echo "=== Step 5: Test Registry Images ==="
+
+echo "Checking registry catalog..."
+REGISTRY_CATALOG=$(curl -s http://localhost:5000/v2/_catalog)
+echo "Registry catalog: ${REGISTRY_CATALOG}"
+
+if echo "${REGISTRY_CATALOG}" | grep -q "alpine"; then
+    echo "Registry images (alpine): PASS"
+else
+    echo "Registry images (alpine): FAIL - alpine not found in registry"
+    exit 1
+fi
+
+if echo "${REGISTRY_CATALOG}" | grep -q "busybox"; then
+    echo "Registry images (busybox): PASS"
+else
+    echo "Registry images (busybox): FAIL - busybox not found in registry"
+    exit 1
+fi
+
+echo ""
+
+echo "=== Step 6: Test Git Server ==="
 
 TEST_REPO_NAME="Orion-Deployment"
 GIT_TEST_DIR="${TEST_DIR}/${TEST_REPO_NAME}"

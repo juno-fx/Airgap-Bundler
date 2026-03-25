@@ -10,6 +10,7 @@ Airgap-Bundler packages Docker images and Git repositories into a tar.gz archive
 
 - **Docker Images**: Pulls and saves Docker images as tar files
 - **Git Repositories**: Clones repositories as bare repositories for serving via git server
+- **Registry Images**: Load custom images from `images.txt` into the local Docker registry
 - **Automated Setup**: Generates docker-compose.yaml and load.sh scripts
 - **Portable Bundle**: Creates a single tar.gz archive for easy transfer
 
@@ -21,22 +22,115 @@ Airgap-Bundler packages Docker images and Git repositories into a tar.gz archive
 
 ## Quick Start
 
-```bash
-# Build the bundle
-./build-bundle.sh
+1. Create an `images.txt` file with the images you want to include in the registry:
+   ```bash
+   # Create images.txt with your desired images
+   cat > images.txt << 'EOF'
+   nginx:latest
+   postgres:15
+   redis:7-alpine
+   EOF
+   ```
 
-# Or use make
-make build
+2. Build the bundle:
+   ```bash
+   # Build the bundle (uses default localhost:5000 for registry)
+   ./build-bundle.sh
+
+   # Or use make
+   make build
+   ```
+
+This creates `airgap-bundle.tar.gz` in the current directory.
+
+> **Note**: The `images.txt` file is required. See [Registry Images (images.txt)](#registry-images-images-txt) for more details.
+
+## Configuration
+
+### CLI Options
+
+```bash
+./build-bundle.sh --registry-url <url>
 ```
 
-This creates `airgap-bundle-YYYYMMDDHHMMSS.tar.gz` in the current directory.
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--registry-url` | Docker registry URL | `localhost:5000` |
+| `--help` | Show help message | - |
+
+Example:
+```bash
+./build-bundle.sh --registry-url myregistry:5000
+```
+
+### Registry Images (images.txt)
+
+Create an `images.txt` file in the same directory as `build-bundle.sh` to include custom images in the local Docker registry.
+
+**Format:**
+- One image per line in `image:tag` format
+- Lines starting with `#` are comments
+- Empty lines are ignored
+
+**Example images.txt:**
+```bash
+# Example images.txt
+nginx:latest
+postgres:15
+redis:7-alpine
+```
+
+See `images.txt.example` for more examples.
+
+### Git Repositories
+
+Edit the `GIT_REPOS` array in `build-bundle.sh`:
+
+```bash
+GIT_REPOS=(
+    "https://github.com/juno-fx/Orion-Deployment.git"
+    "https://github.com/juno-fx/Genesis-Deployment.git"
+)
+```
+
+### Docker Service Images
+
+Edit the `DOCKER_IMAGES` array in `build-bundle.sh`:
+
+```bash
+DOCKER_IMAGES=(
+    "aliolozy/tinygit:latest"
+    "registry:3"
+)
+```
+
+## Bundle File Structure
+
+When extracted, the bundle contains:
+
+```
+airgap-bundle/
+├── docker/                      # Service images (tinygit, registry)
+│   ├── aliolozy-tinygit-latest.tar
+│   └── registry-3.tar
+├── registry-images/             # User-provided images for local registry
+│   ├── nginx-latest.tar
+│   ├── postgres-15.tar
+│   └── redis-7-alpine.tar
+├── git-repos/                   # Git repositories (bare)
+│   ├── Orion-Deployment.git
+│   ├── Genesis-Deployment.git
+│   └── Terra-Official-Plugins.git
+├── docker-compose.yaml
+└── load.sh
+```
 
 ## Usage on Target Machine
 
 1. Extract the bundle:
    ```bash
-   tar -xzf airgap-bundle-YYYYMMDDHHMMSS.tar.gz
-   cd airgap-bundle-YYYYMMDDHHMMSS
+   tar -xzf airgap-bundle.tar.gz
+   cd airgap-bundle
    ```
 
 2. Run the load script:
@@ -56,26 +150,26 @@ Rsync is ideal for transferring the bundle as it supports resuming and is effici
 
 ```bash
 # Rsync the bundle to a remote target machine
-rsync -avz --progress airgap-bundle-YYYYMMDDHHMMSS.tar.gz user@target-machine:/path/to/destination/
+rsync -avz --progress airgap-bundle.tar.gz user@target-machine:/path/to/destination/
 
 # Or transfer the extracted directory
-rsync -avz --progress airgap-bundle-YYYYMMDDHHMMSS/ user@target-machine:/path/to/destination/
+rsync -avz --progress airgap-bundle/ user@target-machine:/path/to/destination/
 ```
 
 ### Using SCP
 
 ```bash
-scp airgap-bundle-YYYYMMDDHHMMSS.tar.gz user@target-machine:/path/to/destination/
+scp airgap-bundle.tar.gz user@target-machine:/path/to/destination/
 ```
 
 ### Using USB Drive
 
 ```bash
 # Copy to USB drive (assuming /mnt/usb is mounted)
-cp airgap-bundle-YYYYMMDDHHMMSS.tar.gz /mnt/usb/
+cp airgap-bundle.tar.gz /mnt/usb/
 
 # On target machine, mount USB and copy
-cp /mnt/usb/airgap-bundle-YYYYMMDDHHMMSS.tar.gz /path/to/destination/
+cp /mnt/usb/airgap-bundle.tar.gz /path/to/destination/
 ```
 
 ## Working with Git Repositories
@@ -90,6 +184,20 @@ git clone http://localhost:8080/git/Orion-Deployment.git
 
 # Clone to a specific directory
 git clone http://localhost:8080/git/Orion-Deployment.git my-project
+```
+
+### Branch Support
+
+All branches are included in the bundle (last 10 commits per branch). This allows ArgoCD to:
+- Deploy from any branch
+- Roll back to previous commits within the branch
+
+### Switching Branches
+
+```bash
+cd my-project
+git fetch --all
+git checkout v1.0
 ```
 
 ## Working with Docker Registry
@@ -109,14 +217,11 @@ curl http://localhost:5000/v2/<image-name>/tags/list
 ### Pulling an Image from Registry
 
 ```bash
-# Tag an existing image for the local registry
-docker tag myimage:latest localhost:5000/myimage:latest
-
-# Push to local registry
-docker push localhost:5000/myimage:latest
-
 # Pull from local registry (on any machine that can reach the registry)
-docker pull localhost:5000/myimage:latest
+docker pull localhost:5000/nginx:latest
+
+# Pull with custom registry URL
+docker pull myregistry:5000/nginx:latest
 ```
 
 ### Loading Images from Bundle
@@ -127,21 +232,9 @@ The bundle includes pre-saved Docker images in the `docker/` directory. These ar
 docker load -i docker/aliolozy-tinygit-latest.tar
 ```
 
-## Configuration
+### Registry Images
 
-Edit the arrays at the top of `build-bundle.sh` to customize:
-
-```bash
-GIT_REPOS=(
-    "https://github.com/juno-fx/Orion-Deployment.git"
-    "https://github.com/juno-fx/Genesis-Deployment.git"
-)
-
-DOCKER_IMAGES=(
-    "aliolozy/tinygit:latest"
-    "registry:3"
-)
-```
+Images listed in `images.txt` are automatically loaded into the registry when running `./load.sh`. They are stored in `registry-images/` directory and pushed to the registry on startup.
 
 ## Cleanup
 
@@ -164,12 +257,13 @@ make test
 ```
 
 The integration test performs:
-1. Builds the bundle
+1. Builds the bundle (including registry images)
 2. Extracts to a temporary directory
 3. Starts services via load.sh
 4. Tests Docker registry (push/pull an image)
-5. Tests Git server (clones a repository)
-6. Cleans up all artifacts regardless of pass or fail
+5. Tests Git server (clones a repository, lists branches, switches branches)
+6. Verifies registry images are pushed to registry
+7. Cleans up all artifacts regardless of pass or fail
 
 ## Linting
 

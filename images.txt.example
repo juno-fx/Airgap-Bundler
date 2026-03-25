@@ -1,0 +1,17 @@
+# Example images.txt
+# One image per line (image:tag format)
+# Lines starting with # are comments
+# Empty lines are ignored
+
+# Web server
+nginx:latest
+
+# Database
+postgres:15
+
+# Cache
+redis:7-alpine
+
+# Kubernetes components (example)
+# kubernetes/kubernetes-dashboard:v2.7.0
+# kubernetes/metrics-server:v0.6.3
