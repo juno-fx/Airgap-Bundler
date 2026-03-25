@@ -40,7 +40,9 @@ echo "=== Step 2: Cloning Git repositories ==="
 for repo in "${GIT_REPOS[@]}"; do
     repo_name=$(basename "${repo}" .git)
     echo "Cloning ${repo}..."
-    git clone --depth 100 --bare "${repo}" "${WORK_DIR}/git-repos/${repo_name}.git"
+    git clone --depth 10 --bare "${repo}" "${WORK_DIR}/git-repos/${repo_name}.git"
+    cd "${WORK_DIR}/git-repos/${repo_name}.git" && \
+        git fetch --depth 10 origin '+refs/heads/*:refs/heads/*' '+refs/tags/*:refs/tags/*'
 done
 
 echo ""
@@ -94,6 +96,19 @@ done
 echo ""
 echo "=== Starting Docker Compose stack ==="
 docker compose up -d
+
+echo "Waiting for git server to be ready..."
+max_retries=30
+retry_count=0
+while ! curl -s http://localhost:8080/ > /dev/null 2>&1; do
+    sleep 1
+    retry_count=$((retry_count + 1))
+    if [ ${retry_count} -ge ${max_retries} ]; then
+        echo "ERROR: Git server failed to start after ${max_retries} seconds"
+        exit 1
+    fi
+done
+echo "Git server is ready"
 
 echo ""
 echo "=== Airgap Bundle Ready ==="

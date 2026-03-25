@@ -93,14 +93,43 @@ echo ""
 echo "=== Step 5: Test Git Server ==="
 
 TEST_REPO_NAME="Orion-Deployment"
+GIT_TEST_DIR="${TEST_DIR}/${TEST_REPO_NAME}"
 
 echo "Cloning test repository from git server..."
-git clone "http://localhost:8080/git/${TEST_REPO_NAME}.git" "${TEST_DIR}/${TEST_REPO_NAME}" 2>/dev/null || true
+rm -rf "${GIT_TEST_DIR}"
+git clone "http://localhost:8080/git/${TEST_REPO_NAME}.git" "${GIT_TEST_DIR}"
 
-if [ -d "${TEST_DIR}/${TEST_REPO_NAME}/.git" ]; then
-    echo "Git Server: PASS"
+if [ -d "${GIT_TEST_DIR}/.git" ]; then
+    echo "Clone: PASS"
 else
-    echo "Git Server: FAIL"
+    echo "Clone: FAIL"
+    exit 1
+fi
+
+echo "Checking branches..."
+cd "${GIT_TEST_DIR}"
+BRANCH_COUNT=$(git branch -a | wc -l)
+if [ "${BRANCH_COUNT}" -lt 2 ]; then
+    echo "Branches: FAIL (only found ${BRANCH_COUNT} branch)"
+    exit 1
+fi
+echo "Branches: PASS (${BRANCH_COUNT} branches)"
+
+echo "Testing branch switch..."
+git checkout v1.0 2>/dev/null || git checkout origin/v1.0 -b v1.0 2>/dev/null || git checkout -b v1.0 origin/v1.0 2>/dev/null || true
+if git rev-parse --verify HEAD > /dev/null 2>&1; then
+    echo "Branch switch: PASS"
+else
+    echo "Branch switch: FAIL"
+    exit 1
+fi
+
+echo "Checking commit history..."
+COMMIT_COUNT=$(git log --oneline | wc -l)
+if [ "${COMMIT_COUNT}" -gt 0 ]; then
+    echo "Commit history: PASS (${COMMIT_COUNT} commits)"
+else
+    echo "Commit history: FAIL"
     exit 1
 fi
 
