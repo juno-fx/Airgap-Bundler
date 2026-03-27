@@ -109,7 +109,7 @@ ${KUBECTL_CMD} patch application genesis -n argocd \
 TEMP_FILE=$(mktemp)
 ${KUBECTL_CMD} get application genesis -n argocd -o yaml > "${TEMP_FILE}"
 sed -i "s|host:.*|host: ${NEW_HOST}|" "${TEMP_FILE}"
-${KUBECTL_CMD} apply -f "${TEMP_FILE}" --server-side --field-manager kubectl --force-conflicts
+${KUBECTL_CMD} apply -f "${TEMP_FILE}" --force
 rm -f "${TEMP_FILE}"
 TEMP_FILE=""
 
