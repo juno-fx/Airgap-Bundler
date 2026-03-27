@@ -107,9 +107,20 @@ ${KUBECTL_CMD} patch application genesis -n argocd \
     --patch "[{\"op\": \"replace\", \"path\": \"/spec/sources/0/helm/parameters/0/value\", \"value\": \"${NEW_NEXTAUTH_URL}\"}]"
 
 TEMP_FILE=$(mktemp)
-${KUBECTL_CMD} get application genesis -n argocd -o yaml > "${TEMP_FILE}"
-sed -i "s|host:.*|host: ${NEW_HOST}|" "${TEMP_FILE}"
-${KUBECTL_CMD} apply -f "${TEMP_FILE}" --force
+max_retries=3
+retry_count=0
+while [[ ${retry_count} -lt ${max_retries} ]]; do
+    ${KUBECTL_CMD} get application genesis -n argocd -o yaml > "${TEMP_FILE}"
+    sed -i "s|host:.*|host: ${NEW_HOST}|" "${TEMP_FILE}"
+    if ${KUBECTL_CMD} apply -f "${TEMP_FILE}" --server-side --field-manager kubectl --force-conflicts 2>/dev/null; then
+        break
+    fi
+    retry_count=$((retry_count + 1))
+    if [[ ${retry_count} -lt ${max_retries} ]]; then
+        echo "Retry ${retry_count}/${max_retries} due to concurrent modification..."
+        sleep 1
+    fi
+done
 rm -f "${TEMP_FILE}"
 TEMP_FILE=""
 
