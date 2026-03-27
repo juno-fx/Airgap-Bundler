@@ -239,7 +239,17 @@ EOF
 chmod +x "${WORK_DIR}/load.sh"
 
 echo ""
-echo "=== Step 6: Creating tar.gz archive ==="
+echo "=== Step 6: Copying helper scripts ==="
+if [ -f "${SCRIPT_DIR}/update_dns.sh" ]; then
+    cp "${SCRIPT_DIR}/update_dns.sh" "${WORK_DIR}/"
+    chmod +x "${WORK_DIR}/update_dns.sh"
+    echo "Copied update_dns.sh to bundle"
+else
+    echo "WARNING: update_dns.sh not found, skipping"
+fi
+
+echo ""
+echo "=== Step 7: Creating tar.gz archive ==="
 cd "${SCRIPT_DIR}"
 tar -czf "airgap-bundle.tar.gz" "${BUNDLE_NAME}-${TIMESTAMP}"
 

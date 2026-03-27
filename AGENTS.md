@@ -199,6 +199,7 @@ Airgap-Bundler/
 ├── Makefile            # Build, lint, test, and clean targets
 ├── build-bundle.sh     # Main build script
 ├── test-integration.sh # Integration test script
+├── update_dns.sh      # DNS update helper script
 ├── devbox.json         # Devbox configuration
 ├── .gitignore          # Git ignore rules
 ├── README.md           # Project readme
@@ -215,3 +216,39 @@ Add the image name to the `DOCKER_IMAGES` array in `build-bundle.sh`.
 
 ### Modifying the docker-compose.yaml
 The docker-compose template is embedded in `build-bundle.sh`. Edit the here document starting with `cat > "${WORK_DIR}/docker-compose.yaml" << 'EOF'`.
+
+### Updating DNS in ArgoCD Application
+When moving the installation to a new environment, update the DNS hostname in the ArgoCD "genesis" Application using the helper script:
+
+```bash
+# From the bundle directory
+./update_dns.sh my.new.host
+```
+
+The script will:
+1. Detect if k3s is available and use `k3s kubectl` accordingly
+2. Verify cluster connectivity (with debug steps if unreachable)
+3. Verify Application 'genesis' exists in argocd namespace
+4. Update the following values:
+   - `repoURL` hostname in sources
+   - `env.NEXTAUTH_URL` helm parameter
+   - `host:` value in helm values
+5. Verify all values were updated correctly
+
+Example:
+```bash
+./update_dns.sh new.juno-deployment.com
+```
+
+Debug if cluster unreachable:
+```bash
+kubectl config current-context    # Check current context
+kubectl get nodes                 # Verify cluster connectivity
+kubectl get pods -n argocd        # Verify ArgoCD is installed
+```
+
+### Adding a New Helper Script
+To add a new script to the bundle:
+1. Create the script in the project root directory
+2. Ensure it has proper permissions (executable, proper shebang)
+3. Add the copy step in `build-bundle.sh` (after step 5 where load.sh is created)

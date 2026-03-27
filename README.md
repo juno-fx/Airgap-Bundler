@@ -37,21 +37,6 @@ This creates `airgap-bundle.tar.gz` in the current directory.
 
 ## Configuration
 
-### CLI Options
-
-```bash
-./build-bundle.sh --registry-url <url>
-```
-
-| Option | Description | Default |
-|--------|-------------|---------|
-| `--registry-url` | Docker registry URL | `localhost:5000` |
-| `--help` | Show help message | - |
-
-Example:
-```bash
-./build-bundle.sh --registry-url myregistry:5000
-```
 
 ### Registry Images (images.txt)
 
@@ -110,7 +95,8 @@ airgap-bundle/
 │   ├── Genesis-Deployment.git
 │   └── Terra-Official-Plugins.git
 ├── docker-compose.yaml
-└── load.sh
+├── load.sh
+└── update_dns.sh                # DNS update helper script
 ```
 
 ## Usage on Target Machine
@@ -129,6 +115,36 @@ airgap-bundle/
 3. Services will be available at:
    - Git Server: http://localhost:8080/
    - Docker Registry: http://localhost:5000
+
+## Updating DNS in ArgoCD Application
+
+When moving the installation to a new environment, update the DNS hostname in the ArgoCD "genesis" Application using the included helper script:
+
+```bash
+./update_dns.sh my.new.host
+```
+
+The script will:
+1. Detect if k3s is available and use `k3s kubectl` accordingly
+2. Verify cluster connectivity (exits with debug steps if unreachable)
+3. Verify Application 'genesis' exists in argocd namespace
+4. Update the following values:
+   - `repoURL` hostname in sources
+   - `env.NEXTAUTH_URL` helm parameter  
+   - `host:` value in helm values
+5. Verify all values were updated correctly
+
+Example:
+```bash
+./update_dns.sh new.juno-deployment.com
+```
+
+Debug if cluster unreachable:
+```bash
+kubectl config current-context    # Check current context
+kubectl get nodes                 # Verify cluster connectivity
+kubectl get pods -n argocd        # Verify ArgoCD is installed
+```
 
 ## Transferring to Target Machine
 

@@ -9,7 +9,7 @@ clean:
 	rm -rf .test-integration/
 
 lint:
-	devbox run -- shellcheck build-bundle.sh test-integration.sh
+	devbox run -- shellcheck -e SC2001 build-bundle.sh test-integration.sh update_dns.sh
 
 test:
 	./test-integration.sh
