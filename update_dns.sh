@@ -80,7 +80,7 @@ echo "=== Current Values ==="
 CURRENT_REPO_URL=$(${KUBECTL_CMD} get application genesis -n argocd -o jsonpath='{.spec.sources[0].repoURL}')
 CURRENT_NEXTAUTH=$(${KUBECTL_CMD} get application genesis -n argocd -o jsonpath='{.spec.sources[0].helm.parameters[?(@.name=="env.NEXTAUTH_URL")].value}')
 CURRENT_VALUES=$(${KUBECTL_CMD} get application genesis -n argocd -o jsonpath='{.spec.sources[0].helm.values}')
-CURRENT_HOST=$(echo "${CURRENT_VALUES}" | grep -oP 'host:\s*\K\S+' || true)
+CURRENT_HOST=$(echo "${CURRENT_VALUES}" | grep -oP '^\s*host:\s*\K.+' | tr -d ' ' || true)
 
 echo "Current repoURL:       ${CURRENT_REPO_URL}"
 echo "Current NEXTAUTH_URL: ${CURRENT_NEXTAUTH}"
@@ -111,7 +111,7 @@ max_retries=3
 retry_count=0
 while [[ ${retry_count} -lt ${max_retries} ]]; do
     ${KUBECTL_CMD} get application genesis -n argocd -o yaml > "${TEMP_FILE}"
-    sed -i "s|host:.*|host: ${NEW_HOST}|" "${TEMP_FILE}"
+    sed -i "s|^[[:space:]]*host:.*|host: ${NEW_HOST}|" "${TEMP_FILE}"
     if ${KUBECTL_CMD} apply -f "${TEMP_FILE}" --server-side --field-manager kubectl --force-conflicts 2>/dev/null; then
         break
     fi
@@ -131,7 +131,7 @@ echo "=== Verification ==="
 UPDATED_REPO_URL=$(${KUBECTL_CMD} get application genesis -n argocd -o jsonpath='{.spec.sources[0].repoURL}')
 UPDATED_NEXTAUTH=$(${KUBECTL_CMD} get application genesis -n argocd -o jsonpath='{.spec.sources[0].helm.parameters[?(@.name=="env.NEXTAUTH_URL")].value}')
 UPDATED_VALUES=$(${KUBECTL_CMD} get application genesis -n argocd -o jsonpath='{.spec.sources[0].helm.values}')
-UPDATED_HOST=$(echo "${UPDATED_VALUES}" | grep -oP 'host:\s*\K\S+' || true)
+UPDATED_HOST=$(echo "${UPDATED_VALUES}" | grep -oP '^\s*host:\s*\K.+' | tr -d ' ' || true)
 
 echo "Updated repoURL:       ${UPDATED_REPO_URL}"
 echo "Updated NEXTAUTH_URL: ${UPDATED_NEXTAUTH}"
