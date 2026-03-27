@@ -1,6 +1,14 @@
 #!/bin/bash
 set -euo pipefail
 
+TEMP_FILE=""
+cleanup() {
+    if [[ -n "${TEMP_FILE}" ]] && [[ -f "${TEMP_FILE}" ]]; then
+        rm -f "${TEMP_FILE}"
+    fi
+}
+trap cleanup EXIT
+
 if command -v k3s &>/dev/null; then
     KUBECTL_CMD="k3s kubectl"
 else
@@ -20,7 +28,7 @@ Example:
     $(basename "$0") new.juno-deployment.com
 
 The script updates:
-  - repoURL hostname in sources
+  - repoURL hostname in sources (preserves port)
   - env.NEXTAUTH_URL helm parameter
   - host value in helm values
 
@@ -79,9 +87,8 @@ echo "Current NEXTAUTH_URL: ${CURRENT_NEXTAUTH}"
 echo "Current host:         ${CURRENT_HOST}"
 echo ""
 
-NEW_REPO_URL=$(echo "${CURRENT_REPO_URL}" | sed "s|://[^/]*|://${NEW_HOST}|")
+NEW_REPO_URL=$(echo "${CURRENT_REPO_URL}" | sed "s|://[^/:]*|://${NEW_HOST}|")
 NEW_NEXTAUTH_URL="https://${NEW_HOST}/api/auth"
-NEW_VALUES=$(echo "${CURRENT_VALUES}" | sed "s|host:.*|host: ${NEW_HOST}|")
 
 echo "=== New Values ==="
 echo "New repoURL:       ${NEW_REPO_URL}"
@@ -99,9 +106,12 @@ ${KUBECTL_CMD} patch application genesis -n argocd \
     --type json \
     --patch "[{\"op\": \"replace\", \"path\": \"/spec/sources/0/helm/parameters/0/value\", \"value\": \"${NEW_NEXTAUTH_URL}\"}]"
 
-${KUBECTL_CMD} patch application genesis -n argocd \
-    --type merge \
-    --patch "{\"spec\": {\"sources\": [{\"helm\": {\"values\": \"${NEW_VALUES}\"}}]}}"
+TEMP_FILE=$(mktemp)
+${KUBECTL_CMD} get application genesis -n argocd -o yaml > "${TEMP_FILE}"
+sed -i "s|host:.*|host: ${NEW_HOST}|" "${TEMP_FILE}"
+${KUBECTL_CMD} apply -f "${TEMP_FILE}"
+rm -f "${TEMP_FILE}"
+TEMP_FILE=""
 
 echo "Updates applied successfully"
 echo ""
