@@ -27,11 +27,11 @@ Airgap-Bundler packages Docker images and Git repositories into a tar.gz archive
    # Build the bundle (uses default localhost:5000 for registry)
    ./build-bundle.sh
 
-   # Or use make
+   # Or use make (outputs to bundles/)
    make build
    ```
 
-This creates `genesis-<version>-orion-<version>.tar.gz` (e.g., `genesis-3.0.2-orion-3.1.0.tar.gz`) in the current directory.
+This creates `genesis-<version>-orion-<version>.tar.gz` (e.g., `genesis-3.0.2-orion-3.1.0.tar.gz`) in the `bundles/` directory.
 
 > **Note**: The bundle includes a preset `images.txt` with default registry images. See [Registry Images (images.txt)](#registry-images-images-txt) to customize.
 
@@ -307,59 +307,50 @@ This project includes a Vagrant configuration to test the bundle in an airgapped
 ### Quick Start
 
 ```bash
-# 1. Build the bundle (if not already built)
+# 1. Build the bundle (outputs to bundles/)
 make build
 
-# 2. Extract the bundle (Vagrant syncs the folder, not the tar.gz)
-tar -xzf genesis-3.0.2-orion-3.1.0.tar.gz
+# 2. Start the VM (syncs bundles/ to /bundles)
+make up
 
-# 3. Start the VM
-vagrant up
+# 3. SSH into VM
+make ssh
 
-# 4. Sync files to VM (run after extracting or after making changes)
-vagrant rsync
-
-# 5. SSH into VM and run installation
-vagrant ssh
-
-# Inside VM:
-cd /airgap-bundle
-./load.sh --push-to 192.168.56.1:5000
+# 4. Extract and run in VM:
+cd /bundles
+tar -xzf genesis-*.tar.gz
+cd genesis-*/
+./load.sh --push-to <registry-ip>:5000
 ```
 
-### Vagrant Commands
+### Updating Bundle in Running VM
 
-| Command | Description |
-|---------|-------------|
-| `vagrant up` | Create and start the VM |
-| `vagrant halt` | Stop the VM |
-| `vagrant destroy` | Destroy the VM |
-| `vagrant rsync` | Sync bundle files to VM |
-| `vagrant ssh` | SSH into the VM |
-| `vagrant reload` | Restart VM (after Vagrantfile changes) |
-| `vagrant status` | Show VM status |
+After rebuilding with `make build`:
+
+```
+make rsync
+```
+
+### VM Targets (Makefile)
+
+```bash
+make up        # Create and start VM (with bundle sync)
+make rsync     # Re-sync bundles to VM
+make ssh       # SSH into VM
+make halt      # Stop VM
+make destroy   # Destroy VM
+make status    # Show VM status
+make airgap    # Disable internet (disconnect NAT)
+make online    # Re-enable internet (reconnect NAT)
+```
 
 ### VM Configuration
 
 - **OS**: Ubuntu 22.04 LTS (jammy)
 - **IP**: 192.168.56.10 (host-only network)
 - **Resources**: 2 CPUs, 4GB RAM, 80GB disk
-- **Bundle location**: `/airgap-bundle`
+- **Bundle location**: `/bundles/`
 - **Docker**: Installed automatically via bootstrap script
-
-### Workflow Overview
-
-The Vagrant workflow is designed for testing airgapped deployment:
-
-```
-┌─────────────────┐      ┌──────────────┐      ┌────────────────┐
-│   Build Host    │ ───► │   VM (Vagrant)│ ───► │ Airgapped Test │
-│                 │      │              │      │                │
-│ make build      │      │ vagrant up    │      │ load.sh        │
-│ tar -xzf        │      │ vagrant rsync│      │ --push-to      │
-│                 │      │ vagrant ssh   │      │                │
-└─────────────────┘      └──────────────┘      └────────────────┘
-```
 
 ### Troubleshooting
 
@@ -378,11 +369,11 @@ sudo /sbin/vboxconfig
 
 #### First-time VM setup
 
-The first time you run `vagrant up`, it will:
+The first time you run `make up`, it will:
 1. Download the Ubuntu 22.04 box (~400MB)
 2. Create the VM with specified resources
 3. Run bootstrap script to install Docker
-4. Sync the bundle folder to `/airgap-bundle`
+4. Sync bundles to `/bundles/`
 
 This may take several minutes.
 
@@ -391,64 +382,3 @@ This may take several minutes.
 The VM uses host-only networking (192.168.56.0/24). Make sure:
 - VirtualBox Host-Only Ethernet Adapter is enabled
 - No firewall blocking the 192.168.56.x subnet
-
-#### Sync issues
-
-If `vagrant rsync` fails, try:
-```bash
-# Force re-sync
-vagrant rsync --delete
-
-# Or destroy and recreate
-vagrant destroy -f
-vagrant up
-vagrant rsync
-```
-
-### Testing the Installation
-
-```bash
-# From host - run load.sh in VM with remote registry push
-vagrant ssh -c "cd /airgap-bundle && ./load.sh --push-to 192.168.56.1:5000"
-
-# Or SSH in and manually interact
-vagrant ssh
-```
-
-### Bundle Contents in VM
-
-When synced, the VM has access to:
-
-```
-/airgap-bundle/
-├── docker/                      # Service images (tinygit, registry)
-├── registry-images/             # Juno + GPU operator images
-├── git-repos/                   # Orion, Genesis, Terra-Plugins, ingress-nginx
-├── docker-compose.yaml
-├── load.sh                     # Main load script
-├── update_dns.sh               # ArgoCD DNS updater
-├── orion-install-helper        # Juno Orion installer
-└── run-install.sh              # Wrapper script for VM execution
-```
-
-#### Makefile Targets
-
-All tasks are available via Makefile:
-
-```bash
-# Build and lint
-make build
-make lint
-make test
-make clean
-
-# VM management
-make up
-make rsync
-make ssh
-make halt
-make destroy
-make status
-```
-
-Note: VM targets use underscores (`_`) instead of colons due to Make compatibility.

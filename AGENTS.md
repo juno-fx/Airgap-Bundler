@@ -10,7 +10,7 @@ Airgap-Bundler is a helper script for loading and distributing Juno Innovations 
 
 ### Build the Bundle
 ```bash
-# Using make (recommended)
+# Using make (recommended) - outputs to bundles/
 make build
 
 # Or run directly
@@ -22,6 +22,7 @@ This script:
 2. Clones Git repositories as bare repositories with pinned branches
 3. Creates a docker-compose.yaml and load.sh script
 4. Packages everything into `genesis-<version>-orion-<version>.tar.gz`
+5. Moves the tar.gz to the `bundles/` directory
 
 ### Prerequisites
 - Docker must be installed and running
@@ -235,9 +236,9 @@ Airgap-Bundler/
 ├── update_dns.sh        # DNS update helper script
 ├── Vagrantfile          # VM configuration for airgapped testing
 ├── scripts/
-│   ├── bootstrap-vm.sh   # VM provisioning script (Docker installation)
-│   └── run-install.sh   # Wrapper script for VM execution
+│   └── bootstrap-vm.sh   # VM provisioning script (Docker installation)
 ├── images.txt            # Registry images list
+├── bundles/              # Built bundle tar.gz files (gitignored)
 ├── devbox.json           # Devbox configuration (optional, for linting)
 ├── .gitignore           # Git ignore rules
 └── .idea/                # IDE configuration
@@ -302,27 +303,35 @@ The project includes Vagrant configuration to test bundles in an airgapped Virtu
 ### Workflow
 
 ```
-# 1. Build bundle on host
+# 1. Build bundle on host (outputs to bundles/)
 make build
 
-# 2. Extract (Vagrant syncs folder, not tar.gz)
-tar -xzf genesis-3.0.2-orion-3.1.0.tar.gz
-
-# 3. Start VM
+# 2. Start VM (creates and syncs bundles to /bundles)
 make up
 
-# 4. Sync files to VM
-make rsync
+# 3. SSH into VM
+make ssh
 
-# 5. Test installation in VM
-vagrant ssh -c "cd /airgap-bundle && ./load.sh --push-to <registry-ip>:5000"
+# 4. Extract and run in VM
+cd /bundles
+tar -xzf genesis-*.tar.gz
+cd genesis-*/
+./load.sh --push-to <registry-ip>:5000
+```
+
+### Updating Bundle in Running VM
+
+After rebuilding with `make build`:
+
+```
+make rsync
 ```
 
 ### VM Targets (Makefile)
 
 ```bash
-make up        # Create and start VM
-make rsync     # Sync bundle files to VM
+make up        # Create and start VM (with bundle sync)
+make rsync     # Re-sync bundles to VM
 make ssh       # SSH into VM
 make halt      # Stop VM
 make destroy   # Destroy VM
@@ -336,7 +345,7 @@ make online    # Re-enable internet (reconnect NAT)
 - **OS**: Ubuntu 22.04 LTS (jammy)
 - **Network**: Host-only (192.168.56.10)
 - **Resources**: 2 CPUs, 4GB RAM
-- **Bundle path**: `/airgap-bundle`
+- **Bundle path**: `/bundles/`
 - **Docker**: Auto-installed via bootstrap script
 
 ### Troubleshooting
