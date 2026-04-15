@@ -1,13 +1,40 @@
 {
   "$schema":  "https://raw.githubusercontent.com/jetify-com/devbox/0.17.0/.schema/devbox.schema.json",
-  "packages": ["shellcheck@latest"],
+  "packages": [
+    "shellcheck@latest",
+    "vagrant@latest"
+  ],
   "shell": {
     "init_hook": [
-      "echo 'Welcome to devbox!' > /dev/null"
+      "echo 'Welcome to Airgap-Bundler!' > /dev/null"
     ],
     "scripts": {
+      "build": [
+        "./build-bundle.sh"
+      ],
       "test": [
-        "echo \"Error: no test specified\" && exit 1"
+        "./test-integration.sh"
+      ],
+      "lint": [
+        "shellcheck build-bundle.sh test-integration.sh"
+      ],
+      "vm:up": [
+        "vagrant up"
+      ],
+      "vm:rsync": [
+        "vagrant rsync"
+      ],
+      "vm:ssh": [
+        "vagrant ssh"
+      ],
+      "vm:halt": [
+        "vagrant halt"
+      ],
+      "vm:destroy": [
+        "vagrant destroy -f"
+      ],
+      "vm:status": [
+        "vagrant status"
       ]
     }
   }

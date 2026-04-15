@@ -1,15 +1,48 @@
-# Example images.txt
-# One image per line (image:tag format)
-# Lines starting with # are comments
-# Empty lines are ignored
+# === Juno Core (genesis 3.0.2 / orion 3.1.0) ===
 
-# Common Plugins
-lscr.io/linuxserver/chrome:latest
-wettyoss/wetty:latest
+# Genesis management
+docker.io/junoinnovations/genesis:v4.0.2
+docker.io/junoinnovations/titan:v2.1.1
+docker.io/junoinnovations/terra:v2.1.0
+docker.io/junoinnovations/rhea:v1.0.0
 
-# Helios Containerized Workstations:
+# Orion deployments
+docker.io/junoinnovations/kuiper:v4.1.0
+docker.io/junoinnovations/hubble:v5.1.0
+
+# === ArgoCD (from docs) ===
+
+quay.io/argoproj/argocd:v3.0.9
+ghcr.io/dexidp/dex:v2.41.1
+docker.io/library/redis:7.2.7-alpine
+
+# === ingress-nginx (from docs) ===
+
+registry.k8s.io/ingress-nginx/controller:v1.15.0
+registry.k8s.io/ingress-nginx/kube-webhook-certgen:v1.6.8
+
+# === NVIDIA GPU Operator v25.10.1 ===
+
+nvcr.io/nvidia/gpu-operator:v25.10.1
+nvcr.io/nvidia/cloud-native/k8s-driver-manager:v0.9.1
+nvcr.io/nvidia/cuda:13.0.1-base-ubi9
+nvcr.io/nvidia/k8s/container-toolkit:v1.18.1
+nvcr.io/nvidia/k8s-device-plugin:v0.18.1
+nvcr.io/nvidia/k8s/dcgm-exporter:4.4.2-4.7.0-distroless
+nvcr.io/nvidia/cloud-native/dcgm:4.4.2-1-ubuntu22.04
+nvcr.io/nvidia/cloud-native/k8s-mig-manager:v0.13.1
+nvcr.io/nvidia/cloud-native/vgpu-device-manager:v0.4.1
+nvcr.io/nvidia/kubevirt-gpu-device-plugin:v1.4.0
+nvcr.io/nvidia/cloud-native/nvidia-fs:2.26.6-ubuntu22.04
+nvcr.io/nvidia/cloud-native/gdrdrv:v2.5.1-ubuntu22.04
+
+# === Helios Workstations (as-is) ===
 
 docker.io/junoinnovations/helios:unstable-noble
+docker.io/junoinnovations/helios-ai:unstable-noble
+
+# Optional (commented)
+
 # docker.io/junoinnovations/helios:unstable-sid
 # docker.io/junoinnovations/helios:unstable-kali
 # docker.io/junoinnovations/helios:unstable-alma-9
@@ -17,7 +50,6 @@ docker.io/junoinnovations/helios:unstable-noble
 # docker.io/junoinnovations/helios:unstable-rocky-9
 # docker.io/junoinnovations/helios:unstable-jammy
 
-docker.io/junoinnovations/helios-ai:unstable-noble
 # docker.io/junoinnovations/helios-ai:unstable-sid
 # docker.io/junoinnovations/helios-ai:unstable-kali
 # docker.io/junoinnovations/helios-ai:unstable-alma-9
@@ -31,5 +63,3 @@ docker.io/junoinnovations/helios-ai:unstable-noble
 # docker.io/junoinnovations/helios-vfx:unstable-bookworm
 # docker.io/junoinnovations/helios-vfx:unstable-rocky-9
 # docker.io/junoinnovations/helios-vfx:unstable-jammy
-
-

@@ -31,39 +31,45 @@ Airgap-Bundler packages Docker images and Git repositories into a tar.gz archive
    make build
    ```
 
-This creates `airgap-bundle.tar.gz` in the current directory.
+This creates `genesis-<version>-orion-<version>.tar.gz` (e.g., `genesis-3.0.2-orion-3.1.0.tar.gz`) in the current directory.
 
 > **Note**: The bundle includes a preset `images.txt` with default registry images. See [Registry Images (images.txt)](#registry-images-images-txt) to customize.
+
+The bundle also downloads the Orion installer which will be launched after images are loaded.
 
 ## Configuration
 
 
 ### Registry Images (images.txt)
 
-The `images.txt` file is included with preset images. Edit it to customize which images are included in the local Docker registry.
+The `images.txt` file contains preset images to include in the local Docker registry. Edit it to customize.
 
 **Format:**
 - One image per line in `image:tag` format
 - Lines starting with `#` are comments
-- Empty lines are ignored
+- Use grouped headers with `# === Section Name ===`
 
 **Example images.txt:**
 ```bash
-# Example images.txt
-nginx:latest
-postgres:15
-redis:7-alpine
+# === Juno Core (genesis 2.0.3 / orion 2.0.1) ===
+
+docker.io/junoinnovations/genesis:v4.0.2
+docker.io/junoinnovations/hubble:v5.1.0
+# ... more images
+
+# === NVIDIA GPU Operator v25.10.1 ===
+
+nvcr.io/nvidia/gpu-operator:v25.10.1
+# ... more images
 ```
 
 ### Git Repositories
 
-Edit the `GIT_REPOS` array in `build-bundle.sh`:
+Git repositories are cloned with pinned branches in `build-bundle.sh`. To change versions, edit `GENESIS_VERSION` and `ORION_VERSION` at the top of the script:
 
 ```bash
-GIT_REPOS=(
-    "https://github.com/juno-fx/Orion-Deployment.git"
-    "https://github.com/juno-fx/Genesis-Deployment.git"
-)
+GENESIS_VERSION="2.0.3"
+ORION_VERSION="2.0.1"
 ```
 
 ### Docker Service Images
@@ -82,39 +88,50 @@ DOCKER_IMAGES=(
 When extracted, the bundle contains:
 
 ```
-airgap-bundle/
+genesis-3.0.2-orion-3.1.0/
 ├── docker/                      # Service images (tinygit, registry)
 │   ├── aliolozy-tinygit-latest.tar
 │   └── registry-3.tar
 ├── registry-images/             # User-provided images for local registry
-│   ├── nginx-latest.tar
-│   ├── postgres-15.tar
-│   └── redis-7-alpine.tar
+│   ├── genesis-v4.0.2.tar
+│   ├── hubble-v5.1.0.tar
+│   └── ... (other images)
 ├── git-repos/                   # Git repositories (bare)
-│   ├── Orion-Deployment.git
-│   ├── Genesis-Deployment.git
-│   └── Terra-Official-Plugins.git
+│   ├── Orion-Deployment.git    # branch v2.0.1
+│   ├── Genesis-Deployment.git # branch v2.0.3
+│   ├── Terra-Official-Plugins.git
+│   └── ingress-nginx.git
 ├── docker-compose.yaml
 ├── load.sh
-└── update_dns.sh                # DNS update helper script
+├── update_dns.sh                # DNS update helper script
+└── orion-install-helper         # Juno Orion installer (launched from load.sh)
 ```
 
 ## Usage on Target Machine
 
 1. Extract the bundle:
    ```bash
-   tar -xzf airgap-bundle.tar.gz
-   cd airgap-bundle
+   tar -xzf genesis-3.0.2-orion-3.1.0.tar.gz
+   cd genesis-3.0.2-orion-3.1.0
    ```
 
 2. Run the load script:
    ```bash
+   # Default: load locally only
    ./load.sh
+
+   # Push images to a remote registry
+   ./load.sh --push-to myregistry:5000
    ```
 
 3. Services will be available at:
    - Git Server: http://localhost:8080/
    - Docker Registry: http://localhost:5000
+
+4. The installer will launch automatically after images are loaded:
+   - After images are loaded into the registry (and pushed if --push-to was specified)
+   - You will be prompted: `Run Orion installer now? [y/N]:`
+   - Enter `y` to launch the interactive Orion installer wizard
 
 ## Updating DNS in ArgoCD Application
 
@@ -274,9 +291,164 @@ The integration test performs:
 Run shellcheck to validate the scripts:
 
 ```bash
-# Using make
 make lint
-
-# Or directly with devbox
-devbox run -- shellcheck build-bundle.sh test-integration.sh
 ```
+
+## Airgapped VM Testing
+
+This project includes a Vagrant configuration to test the bundle in an airgapped VM environment using VirtualBox.
+
+### Prerequisites
+
+- [Vagrant](https://www.vagrantup.com/downloads) installed
+- VirtualBox installed
+- VirtualBox kernel module loaded (`vboxdrv`)
+
+### Quick Start
+
+```bash
+# 1. Build the bundle (if not already built)
+make build
+
+# 2. Extract the bundle (Vagrant syncs the folder, not the tar.gz)
+tar -xzf genesis-3.0.2-orion-3.1.0.tar.gz
+
+# 3. Start the VM
+vagrant up
+
+# 4. Sync files to VM (run after extracting or after making changes)
+vagrant rsync
+
+# 5. SSH into VM and run installation
+vagrant ssh
+
+# Inside VM:
+cd /airgap-bundle
+./load.sh --push-to 192.168.56.1:5000
+```
+
+### Vagrant Commands
+
+| Command | Description |
+|---------|-------------|
+| `vagrant up` | Create and start the VM |
+| `vagrant halt` | Stop the VM |
+| `vagrant destroy` | Destroy the VM |
+| `vagrant rsync` | Sync bundle files to VM |
+| `vagrant ssh` | SSH into the VM |
+| `vagrant reload` | Restart VM (after Vagrantfile changes) |
+| `vagrant status` | Show VM status |
+
+### VM Configuration
+
+- **OS**: Ubuntu 22.04 LTS (jammy)
+- **IP**: 192.168.56.10 (host-only network)
+- **Resources**: 2 CPUs, 4GB RAM, 80GB disk
+- **Bundle location**: `/airgap-bundle`
+- **Docker**: Installed automatically via bootstrap script
+
+### Workflow Overview
+
+The Vagrant workflow is designed for testing airgapped deployment:
+
+```
+┌─────────────────┐      ┌──────────────┐      ┌────────────────┐
+│   Build Host    │ ───► │   VM (Vagrant)│ ───► │ Airgapped Test │
+│                 │      │              │      │                │
+│ make build      │      │ vagrant up    │      │ load.sh        │
+│ tar -xzf        │      │ vagrant rsync│      │ --push-to      │
+│                 │      │ vagrant ssh   │      │                │
+└─────────────────┘      └──────────────┘      └────────────────┘
+```
+
+### Troubleshooting
+
+#### VirtualBox kernel module not loaded
+
+```bash
+# Check if module is loaded
+lsmod | grep vboxdrv
+
+# Load the module
+sudo modprobe vboxdrv
+
+# Or rebuild modules
+sudo /sbin/vboxconfig
+```
+
+#### First-time VM setup
+
+The first time you run `vagrant up`, it will:
+1. Download the Ubuntu 22.04 box (~400MB)
+2. Create the VM with specified resources
+3. Run bootstrap script to install Docker
+4. Sync the bundle folder to `/airgap-bundle`
+
+This may take several minutes.
+
+#### Network issues
+
+The VM uses host-only networking (192.168.56.0/24). Make sure:
+- VirtualBox Host-Only Ethernet Adapter is enabled
+- No firewall blocking the 192.168.56.x subnet
+
+#### Sync issues
+
+If `vagrant rsync` fails, try:
+```bash
+# Force re-sync
+vagrant rsync --delete
+
+# Or destroy and recreate
+vagrant destroy -f
+vagrant up
+vagrant rsync
+```
+
+### Testing the Installation
+
+```bash
+# From host - run load.sh in VM with remote registry push
+vagrant ssh -c "cd /airgap-bundle && ./load.sh --push-to 192.168.56.1:5000"
+
+# Or SSH in and manually interact
+vagrant ssh
+```
+
+### Bundle Contents in VM
+
+When synced, the VM has access to:
+
+```
+/airgap-bundle/
+├── docker/                      # Service images (tinygit, registry)
+├── registry-images/             # Juno + GPU operator images
+├── git-repos/                   # Orion, Genesis, Terra-Plugins, ingress-nginx
+├── docker-compose.yaml
+├── load.sh                     # Main load script
+├── update_dns.sh               # ArgoCD DNS updater
+├── orion-install-helper        # Juno Orion installer
+└── run-install.sh              # Wrapper script for VM execution
+```
+
+#### Makefile Targets
+
+All tasks are available via Makefile:
+
+```bash
+# Build and lint
+make build
+make lint
+make test
+make clean
+
+# VM management
+make up
+make rsync
+make ssh
+make halt
+make destroy
+make status
+```
+
+Note: VM targets use underscores (`_`) instead of colons due to Make compatibility.

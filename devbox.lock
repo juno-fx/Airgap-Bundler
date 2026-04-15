@@ -108,6 +108,54 @@
           "store_path": "/nix/store/iszqxdn46psh4crvly6zp7wrp00p3lw5-shellcheck-0.11.0-bin"
         }
       }
+    },
+    "vagrant@latest": {
+      "last_modified": "2026-04-07T01:34:01Z",
+      "resolved": "github:NixOS/nixpkgs/dc72a9d2282085d97d5a2cc8e7103a68ed4de188#vagrant",
+      "source": "devbox-search",
+      "version": "2.4.9",
+      "systems": {
+        "aarch64-darwin": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/nfa6albggnl5h052z4mb49k2c5a8gkaq-vagrant-2.4.9",
+              "default": true
+            }
+          ],
+          "store_path": "/nix/store/nfa6albggnl5h052z4mb49k2c5a8gkaq-vagrant-2.4.9"
+        },
+        "aarch64-linux": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/jv5g4qwcj50rm53javbks9cpjnzzs4qa-vagrant-2.4.9",
+              "default": true
+            }
+          ],
+          "store_path": "/nix/store/jv5g4qwcj50rm53javbks9cpjnzzs4qa-vagrant-2.4.9"
+        },
+        "x86_64-darwin": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/kmn0yd10gfifyhihmqbqj6dqwh2bx01q-vagrant-2.4.9",
+              "default": true
+            }
+          ],
+          "store_path": "/nix/store/kmn0yd10gfifyhihmqbqj6dqwh2bx01q-vagrant-2.4.9"
+        },
+        "x86_64-linux": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/pzqh4pkn1ccbwli1zzndsdw8pj0igwbf-vagrant-2.4.9",
+              "default": true
+            }
+          ],
+          "store_path": "/nix/store/pzqh4pkn1ccbwli1zzndsdw8pj0igwbf-vagrant-2.4.9"
+        }
+      }
     }
   }
 }

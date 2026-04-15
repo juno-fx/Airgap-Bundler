@@ -1,9 +1,12 @@
 # Build artifacts
 airgap-bundle*.tar.gz
 airgap-bundle*/
+genesis-*
+bundles/
 
 # Test artifacts
 .test-integration/
 
 # Devbox
 .devbox
+.vagrant
