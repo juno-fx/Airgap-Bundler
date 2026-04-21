@@ -4,9 +4,6 @@ airgap-bundle*/
 genesis-*
 bundles/
 
-# Test artifacts
-.test-integration/
-
 # Devbox
 .devbox
 .vagrant

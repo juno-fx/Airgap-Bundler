@@ -1,0 +1,53 @@
+#!/usr/bin/env python3
+import os, json, sys
+
+
+def require(key):
+    val = os.environ.get(key)
+    if not val:
+        print(f"ERROR: {key} is required but not set", file=sys.stderr)
+        sys.exit(1)
+    return val
+
+
+git_server = require('_JBOOT_GIT_SERVER_IP')
+host       = require('_JBOOT_GENESIS_HOST')
+version    = 'v' + require('_JBOOT_GENESIS_VERSION').lstrip('v')
+email      = require('_JBOOT_BASIC_AUTH_EMAIL')
+password   = require('_JBOOT_BASIC_AUTH_PASSWORD')
+owner      = require('_JBOOT_TITAN_OWNER')
+uid        = require('_JBOOT_TITAN_UID')
+
+data = {
+    "juno_install": True,
+    "k3s_airgap_install": True,
+    "k3s_copy_images": False,
+    "juno_bootstrap_url": f"http://{git_server}:8080/git/Juno-Bootstrap.git",
+    "juno_genesis_deployment_git_url": f"http://{git_server}:8080/git/Genesis-Deployment.git",
+    "juno_bootstrap_chart_values": {
+        "genesis": {
+            "url": f"http://{git_server}:8080/git/Genesis-Deployment.git",
+            "version": version,
+            "config": {
+                "registry": {},
+                "host": host,
+                "http_scheme": "https",
+                "env": {
+                    "NEXTAUTH_URL": f"https://{host}/api/auth",
+                    "BASIC_AUTH_EMAIL": email,
+                    "BASIC_AUTH_PASSWORD": password
+                },
+                "titan": {
+                    "owner": owner,
+                    "uid": int(uid),
+                    "email": email
+                }
+            }
+        },
+        "ingress": {
+            "url": f"http://{git_server}:8081"
+        }
+    }
+}
+
+json.dump(data, sys.stdout)

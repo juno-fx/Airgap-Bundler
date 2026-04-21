@@ -12,11 +12,8 @@
       "build": [
         "./build-bundle.sh"
       ],
-      "test": [
-        "./test-integration.sh"
-      ],
       "lint": [
-        "shellcheck build-bundle.sh test-integration.sh"
+        "shellcheck build-bundle.sh install.sh update_dns.sh"
       ],
       "vm:up": [
         "vagrant up"

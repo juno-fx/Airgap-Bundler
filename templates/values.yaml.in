@@ -1,0 +1,15 @@
+genesis:
+  repoURL: "http://__GIT_SERVER__:8080/git/Genesis-Deployment.git"
+  targetRevision: "v__GENESIS_VERSION__"
+orion:
+  repoURL: "http://__GIT_SERVER__:8080/git/Orion-Deployment.git"
+  targetRevision: "v__ORION_VERSION__"
+ingress:
+  repoURL: "http://__GIT_SERVER__:8080/git/ingress-nginx.git"
+_oneclick_registries:
+  mirrors:
+    docker.io:
+    registry.k8s.io:
+    nvcr.io:
+    quay.io:
+    ghcr.io:

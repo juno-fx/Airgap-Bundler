@@ -1,5 +1,5 @@
 #!/bin/bash
-set -e
+set -euo pipefail
 
 echo "=== Bootstrapping Airgapped VM ==="
 
@@ -24,14 +24,6 @@ apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin do
 echo "Adding current user to docker group..."
 usermod -aG docker vagrant
 
-echo "Setting vagrant password..."
-echo "vagrant:vagrant" | chpasswd
-
-echo "Enabling password SSH..."
-echo "PasswordAuthentication yes" >> /etc/ssh/sshd_config
-echo "PermitRootLogin yes" >> /etc/ssh/sshd_config
-systemctl restart sshd
-
 echo "Starting Docker service..."
 systemctl start docker
 systemctl enable docker
@@ -39,15 +31,3 @@ systemctl enable docker
 echo "=== Docker installed successfully ==="
 docker --version
 docker compose version
-
-echo ""
-echo "=== Airgap Bundle Ready ==="
-echo "Bundle tar.gz is at: /bundles/"
-echo ""
-echo "To extract and run:"
-echo "  cd /bundles"
-echo "  tar -xzf genesis-*.tar.gz"
-echo "  cd genesis-*/"
-echo "  ./load.sh --push-to <registry-ip>:5000"
-echo ""
-echo "The VM is now ready for airgapped operations."

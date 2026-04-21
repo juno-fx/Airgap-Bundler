@@ -1,21 +1,45 @@
 #!/usr/bin/env bash
-set -e
+# build-bundle.sh
+#
+# Builds a self-contained airgap bundle for installing Juno on an offline machine.
+#
+# The bundle includes:
+#   - Docker service images (git server) saved as tars
+#   - K3s airgap image tarball (system images for K3s embedded registry)
+#   - Application images from images.txt saved as tars
+#   - Bare git repositories (Genesis, Orion, Terra, Juno-Bootstrap)
+#   - Helm charts (ingress-nginx)
+#   - Ansible installer (juno-oneclick.tar.gz)
+#   - Rendered install.sh and values.yaml with versions baked in
+#
+# Prerequisites: docker, helm, git, curl, internet access
+# Output: bundles/genesis-<GENESIS_VERSION>-orion-<ORION_VERSION>.tar.gz
+set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# Bundle version metadata
+
+# Version of Genesis and Orion to bundle. These control:
+#   - Which git tag is cloned for each deployment repo
+#   - The version strings baked into install.sh and values.yaml at build time
 GENESIS_VERSION="3.0.2"
 ORION_VERSION="3.1.0"
 
 BUNDLE_NAME="genesis-${GENESIS_VERSION}-orion-${ORION_VERSION}"
 WORK_DIR="${SCRIPT_DIR}/${BUNDLE_NAME}"
-REGISTRY_URL="localhost:5000"
 
 IMAGES_FILE="images.txt"
 
+# Docker images for the git server service. These are saved to docker/ in the
+# bundle and loaded by install.sh before docker compose starts.
 DOCKER_IMAGES=(
     "aliolozy/tinygit:latest"
-    "registry:3"
+    "nginx:alpine"
 )
+
+# K3s version to download airgap images for. Must match the version that
+# Ansible will install on the target. The SHA256 checksum is verified against
+# the official K3s release checksum file before bundling.
+K3S_VERSION="v1.33.1+k3s1"
 
 show_help() {
     cat << EOF
@@ -24,15 +48,13 @@ Usage: $(basename "$0") [OPTIONS]
 Build an airgap bundle containing Docker images and Git repositories.
 
 OPTIONS:
-    --registry-url URL    Docker registry URL (default: localhost:5000)
     --help                Show this help message
 
 EXAMPLES:
     $(basename "$0")
-    $(basename "$0") --registry-url myregistry:5000
 
 FILES:
-    images.txt            List of images to include in registry (one per line)
+    images.txt            List of images to include in bundle (one per line)
                           Lines starting with # are comments
                           Empty lines are ignored
 EOF
@@ -40,10 +62,6 @@ EOF
 
 while [[ $# -gt 0 ]]; do
     case $1 in
-        --registry-url)
-            REGISTRY_URL="$2"
-            shift 2
-            ;;
         --help)
             show_help
             exit 0
@@ -54,6 +72,7 @@ while [[ $# -gt 0 ]]; do
             exit 1
             ;;
     esac
+    shift
 done
 
 IMAGES_FILE_PATH="${SCRIPT_DIR}/${IMAGES_FILE}"
@@ -63,321 +82,157 @@ if [ ! -f "${IMAGES_FILE_PATH}" ]; then
     exit 1
 fi
 
-REGISTRY_IMAGES=()
+# Parse images.txt into an array, stripping blank lines and comments.
+# The trailing `|| [ -n "$line" ]` handles files that lack a final newline.
+K3S_APP_IMAGES=()
 while IFS= read -r line || [ -n "$line" ]; do
     line=$(echo "$line" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
     if [ -z "$line" ] || [[ "$line" == \#* ]]; then
         continue
     fi
-    REGISTRY_IMAGES+=("$line")
+    K3S_APP_IMAGES+=("$line")
 done < "${IMAGES_FILE_PATH}"
 
-echo "=== Airgap Bundle Builder ==="
-echo "Bundle: ${BUNDLE_NAME}"
-echo "Registry URL: ${REGISTRY_URL}"
-echo "Work directory: ${WORK_DIR}"
-echo "Images file: ${IMAGES_FILE_PATH}"
-echo "Registry images: ${#REGISTRY_IMAGES[@]}"
-echo ""
+echo "Building ${BUNDLE_NAME}..."
 
-mkdir -p "${WORK_DIR}/docker"
-mkdir -p "${WORK_DIR}/registry-images"
-mkdir -p "${WORK_DIR}/git-repos"
+# Create the top-level bundle directory and all required subdirectories up front.
+mkdir -p "${WORK_DIR}"/{docker,images,git-repos,helm-charts}
 
-echo "=== Step 1: Pulling and saving Docker images ==="
+# clone_git: shallow bare clone of a repo at a specific branch/tag.
+# Bare clones contain only git objects (no working tree) which is what we
+# need for the git server to serve them via HTTP.
+clone_git() {
+    local repo="$1" branch="$2" dest="$3"
+    echo "[repos] $(basename "$dest" .git) (${branch})"
+    git clone --branch "$branch" --depth 1 --single-branch --bare "$repo" "$dest"
+}
+
+# save_image: docker pull then save to a tar file.
+# The tar filename is derived from the image reference with ':' and '/'
+# replaced by '-' so it is a safe flat filename (e.g. nginx:alpine → nginx-alpine.tar).
+save_image() {
+    local image="$1" dest_dir="$2"
+    echo "  ${image}"
+    docker pull "$image"
+    docker save -o "${dest_dir}/$(echo "$image" | tr ':/' '-').tar" "$image"
+}
+
+echo "[images] docker service images"
 for image in "${DOCKER_IMAGES[@]}"; do
-    echo "Pulling ${image}..."
-    docker pull "${image}"
-    
-    image_name=$(echo "${image}" | tr ':/' '-')
-    echo "Saving ${image} to docker/${image_name}.tar..."
-    docker save -o "${WORK_DIR}/docker/${image_name}.tar" "${image}"
+    save_image "$image" "${WORK_DIR}/docker"
 done
 
-echo "=== Step 2: Pulling and saving registry images ==="
-for image in "${REGISTRY_IMAGES[@]}"; do
-    echo "Pulling ${image}..."
-    docker pull "${image}"
-    
-    image_name=$(echo "${image}" | tr ':/' '-')
-    echo "Saving ${image} to registry-images/${image_name}.tar..."
-    docker save -o "${WORK_DIR}/registry-images/${image_name}.tar" "${image}"
-done
-
-echo "=== Step 3: Cloning Git repositories ==="
-
-echo "Cloning Genesis-Deployment (branch v${GENESIS_VERSION})..."
-git clone --branch "v${GENESIS_VERSION}" --depth 10 --bare \
-    "https://github.com/juno-fx/Genesis-Deployment.git" \
-    "${WORK_DIR}/git-repos/Genesis-Deployment.git"
-cd "${WORK_DIR}/git-repos/Genesis-Deployment.git" && \
-    git fetch --depth 10 origin '+refs/heads/*:refs/heads/*' '+refs/tags/*:refs/tags/*'
-
-echo "Cloning Orion-Deployment (branch v${ORION_VERSION})..."
-git clone --branch "v${ORION_VERSION}" --depth 10 --bare \
-    "https://github.com/juno-fx/Orion-Deployment.git" \
-    "${WORK_DIR}/git-repos/Orion-Deployment.git"
-cd "${WORK_DIR}/git-repos/Orion-Deployment.git" && \
-    git fetch --depth 10 origin '+refs/heads/*:refs/heads/*' '+refs/tags/*:refs/tags/*'
-
-echo "Cloning Terra-Official-Plugins (branch main)..."
-git clone --branch main --depth 10 --bare \
-    "https://github.com/juno-fx/Terra-Official-Plugins.git" \
-    "${WORK_DIR}/git-repos/Terra-Official-Plugins.git"
-cd "${WORK_DIR}/git-repos/Terra-Official-Plugins.git" && \
-    git fetch --depth 10 origin '+refs/heads/*:refs/heads/*' '+refs/tags/*:refs/tags/*'
-
-echo "Cloning ingress-nginx (branch main)..."
-git clone --branch main --depth 10 --bare \
-    "https://github.com/kubernetes/ingress-nginx.git" \
-    "${WORK_DIR}/git-repos/ingress-nginx.git"
-cd "${WORK_DIR}/git-repos/ingress-nginx.git" && \
-    git fetch --depth 10 origin '+refs/heads/*:refs/heads/*' '+refs/tags/*:refs/tags/*'
-
-echo ""
-echo "=== Step 4: Creating docker-compose.yaml ==="
-cat > "${WORK_DIR}/docker-compose.yaml" << 'EOF'
-version: '3.8'
-
-services:
-  git:
-    image: aliolozy/tinygit:latest
-    container_name: git
-    restart: unless-stopped
-    ports:
-      - "8080:80"
-    volumes:
-      - ./git-repos:/git
-    environment:
-      - AUTH_ENABLE=false
-
-  registry:
-    image: registry:3
-    container_name: registry
-    restart: unless-stopped
-    ports:
-      - "5000:5000"
-    volumes:
-      - registry-data:/var/lib/registry
-
-volumes:
-  registry-data:
-EOF
-
-echo ""
-echo "=== Step 5: Creating load.sh ==="
-cat > "${WORK_DIR}/load.sh" << 'LOADEOF'
-#!/usr/bin/env bash
-set -e
-
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-DOCKER_DIR="${SCRIPT_DIR}/docker"
-REGISTRY_IMAGES_DIR="${SCRIPT_DIR}/registry-images"
-GIT_REPOS_DIR="${SCRIPT_DIR}/git-repos"
-REGISTRY_URL="localhost:5000"
-PUSH_TO_REGISTRY=""
-FAILED_PUSHES=()
-
-show_help() {
-    cat << EOF
-Usage: $(basename "$0") [OPTIONS]
-
-Load Docker images and start services for airgap bundle.
-
-OPTIONS:
-    --registry-url URL    Local registry URL (default: localhost:5000)
-    --push-to URL         Also push images to remote registry URL
-    --help                Show this help message
-
-EXAMPLES:
-    $(basename "$0")
-    $(basename "$0") --push-to myregistry:5000
-    $(basename "$0") --registry-url 5001:5000 --push-to remote:5000
-EOF
-}
-
-while [[ $# -gt 0 ]]; do
-    case $1 in
-        --registry-url)
-            REGISTRY_URL="$2"
-            shift 2
-            ;;
-        --push-to)
-            PUSH_TO_REGISTRY="$2"
-            shift 2
-            ;;
-        --help)
-            show_help
-            exit 0
-            ;;
-        *)
-            echo "Unknown option: $1"
-            show_help
-            exit 1
-            ;;
-    esac
-done
-
-echo "=== Loading Docker images into local socket ==="
-for tar_file in "${DOCKER_DIR}"/*.tar; do
-    if [ -f "${tar_file}" ]; then
-        echo "Loading $(basename "${tar_file}")..."
-        docker load -i "${tar_file}"
-    fi
-done
-
-load_and_push_registry_image() {
-    local tar_file="$1"
-    
-    LOAD_OUTPUT=$(docker load -i "${tar_file}")
-    echo "${LOAD_OUTPUT}"
-    
-    image_name_clean=$(echo "${LOAD_OUTPUT}" | sed 's/Loaded image: //')
-    
-    echo "Tagging for registry: ${REGISTRY_URL}/${image_name_clean}"
-    docker tag "${image_name_clean}" "${REGISTRY_URL}/${image_name_clean}"
-    
-    echo "Pushing to registry: ${REGISTRY_URL}/${image_name_clean}"
-    if ! docker push "${REGISTRY_URL}/${image_name_clean}"; then
-        echo "WARNING: Failed to push ${image_name_clean} to local registry"
-        FAILED_PUSHES+=("${image_name_clean}")
-    fi
-    
-    if [ -n "${PUSH_TO_REGISTRY}" ]; then
-        echo ""
-        echo "=== Pushing to remote registry: ${PUSH_TO_REGISTRY} ==="
-        echo "Tagging ${image_name_clean} for ${PUSH_TO_REGISTRY}"
-        docker tag "${image_name_clean}" "${PUSH_TO_REGISTRY}/${image_name_clean}"
-        
-        echo "Pushing to ${PUSH_TO_REGISTRY}"
-        if ! docker push "${PUSH_TO_REGISTRY}/${image_name_clean}"; then
-            echo "WARNING: Failed to push ${image_name_clean} to remote registry"
-            FAILED_PUSHES+=("${image_name_clean} (remote)")
-        fi
-    fi
-}
-
-echo ""
-echo "=== Loading images into local registry ==="
-for tar_file in "${REGISTRY_IMAGES_DIR}"/*.tar; do
-    if [ -f "${tar_file}" ]; then
-        echo "Loading $(basename "${tar_file}")..."
-        load_and_push_registry_image "${tar_file}"
-    fi
-done
-
-echo ""
-echo "=== Starting Docker Compose stack ==="
-docker compose up -d
-
-echo "Waiting for git server to be ready..."
-max_retries=30
-retry_count=0
-while ! curl -s http://localhost:8080/ > /dev/null 2>&1; do
-    sleep 1
-    retry_count=$((retry_count + 1))
-    if [ ${retry_count} -ge ${max_retries} ]; then
-        echo "ERROR: Git server failed to start after ${max_retries} seconds"
-        exit 1
-    fi
-done
-echo "Git server is ready"
-
-echo ""
-echo "=== Waiting for registry to be ready ==="
-max_retries=30
-retry_count=0
-while ! curl -s "http://${REGISTRY_URL}/v2/" > /dev/null 2>&1; do
-    sleep 1
-    retry_count=$((retry_count + 1))
-    if [ ${retry_count} -ge ${max_retries} ]; then
-        echo "ERROR: Registry failed to start after ${max_retries} seconds"
-        exit 1
+echo "[images] k3s airgap (${K3S_VERSION})"
+# Download K3s airgap image tarball and verify its SHA256 checksum against the
+# official release checksum file. This catches truncated downloads or tampering
+# before the bundle is shipped to an air-gapped machine where re-downloading
+# is not possible. The checksum file is removed after verification.
+curl -sL "https://github.com/k3s-io/k3s/releases/download/${K3S_VERSION}/k3s-airgap-images-amd64.tar" \
+    -o "${WORK_DIR}/images/k3s-airgap-images-amd64.tar"
+curl -sL "https://github.com/k3s-io/k3s/releases/download/${K3S_VERSION}/sha256sum-amd64.txt" \
+    -o "${WORK_DIR}/images/sha256sum-amd64.txt"
+EXPECTED_SHA=$(grep "k3s-airgap-images-amd64.tar$" "${WORK_DIR}/images/sha256sum-amd64.txt" | awk '{print $1}')
+ACTUAL_SHA=$(sha256sum "${WORK_DIR}/images/k3s-airgap-images-amd64.tar" | awk '{print $1}')
+if [ "$EXPECTED_SHA" != "$ACTUAL_SHA" ]; then
+    echo "ERROR: SHA256 mismatch for k3s-airgap-images-amd64.tar"
+    echo "  expected: ${EXPECTED_SHA}"
+    echo "  actual:   ${ACTUAL_SHA}"
+    rm -rf "${WORK_DIR}"
+    exit 1
 fi
+echo "[images] k3s airgap SHA256 verified"
+rm -f "${WORK_DIR}/images/sha256sum-amd64.txt"
+
+echo "[images] app images"
+for image in "${K3S_APP_IMAGES[@]}"; do
+    save_image "$image" "${WORK_DIR}/images"
 done
 
-if [ ${#FAILED_PUSHES[@]} -gt 0 ]; then
-    echo ""
-    echo "=== Warning: Failed Pushes ==="
-    echo "The following images failed to push:"
-    for failed in "${FAILED_PUSHES[@]}"; do
-        echo "  - ${failed}"
-    done
-    echo ""
-fi
-
-echo ""
-
-echo ""
-echo "=== Airgap Bundle Ready ==="
-echo ""
-echo "Services running:"
-echo "  - Git Server:           http://localhost:8080/"
-echo "  - Docker Registry:     http://${REGISTRY_URL}"
-if [ -n "${PUSH_TO_REGISTRY}" ]; then
-    echo "  - Remote Registry:    http://${PUSH_TO_REGISTRY}"
-fi
-echo ""
-echo "Git repositories available at http://localhost:8080/:"
-ls -1 "${GIT_REPOS_DIR}" | sed 's/^/  - /'
-echo ""
-echo "Registry images available at http://${REGISTRY_URL}:"
-curl -s "http://${REGISTRY_URL}/v2/_catalog" | grep -o '"repositories":\[[^]]*\]' || echo "  (checking...)"
-if [ -n "${PUSH_TO_REGISTRY}" ]; then
-    echo ""
-    echo "Registry images pushed to http://${PUSH_TO_REGISTRY}:"
-    curl -s "http://${PUSH_TO_REGISTRY}/v2/_catalog" | grep -o '"repositories":\[[^]]*\]' || echo "  (checking...)"
-fi
-
-echo ""
-echo "=== Run Orion Installer? ==="
-echo "The Orion installer will launch an interactive wizard to configure your deployment."
-read -p "Run Orion installer now? [y/N]: " -n 1 -r
-echo
-if [[ $REPLY =~ ^[Yy]$ ]]; then
-    if [ -f "./orion-install-helper" ]; then
-        echo "Starting Orion installer..."
-        ./orion-install-helper
-    else
-        echo "ERROR: orion-install-helper not found in current directory"
-        exit 1
-    fi
-fi
-
-echo ""
-echo "To load Docker images into K8s cluster, use:"
-echo "  docker load -i <image>.tar"
-echo "  docker push localhost:5000/<image>:<tag>"
-LOADEOF
-
-chmod +x "${WORK_DIR}/load.sh"
-
-echo ""
-echo "=== Step 6: Copying helper scripts ==="
-if [ -f "${SCRIPT_DIR}/update_dns.sh" ]; then
-    cp "${SCRIPT_DIR}/update_dns.sh" "${WORK_DIR}/"
-    chmod +x "${WORK_DIR}/update_dns.sh"
-    echo "Copied update_dns.sh to bundle"
+if [ -f "${SCRIPT_DIR}/templates/registries.yaml.in" ]; then
+    cp "${SCRIPT_DIR}/templates/registries.yaml.in" "${WORK_DIR}/registries.yaml"
 else
-    echo "WARNING: update_dns.sh not found, skipping"
+    echo "ERROR: templates/registries.yaml.in not found"
+    rm -rf "${WORK_DIR}"
+    exit 1
 fi
 
-echo ""
-echo "=== Step 6b: Downloading Orion installer ==="
-curl -sL "$(curl -s https://api.github.com/repos/juno-fx/Juno-Bootstrap/releases/latest | grep browser_download_url | grep orion-install-helper | cut -d '"' -f 4)" > "${WORK_DIR}/orion-install-helper"
-chmod +x "${WORK_DIR}/orion-install-helper"
-echo "Downloaded orion-install-helper"
+clone_git "https://github.com/juno-fx/Genesis-Deployment.git" "v${GENESIS_VERSION}" "${WORK_DIR}/git-repos/Genesis-Deployment.git"
+clone_git "https://github.com/juno-fx/Orion-Deployment.git" "v${ORION_VERSION}" "${WORK_DIR}/git-repos/Orion-Deployment.git"
+clone_git "https://github.com/juno-fx/Terra-Official-Plugins.git" "main" "${WORK_DIR}/git-repos/Terra-Official-Plugins.git"
+clone_git "https://github.com/juno-fx/Juno-Bootstrap.git" "main" "${WORK_DIR}/git-repos/Juno-Bootstrap.git"
 
-echo ""
-echo "=== Step 7: Creating tar.gz archive ==="
+if [ -f "${SCRIPT_DIR}/docker-compose.yaml" ]; then
+    cp "${SCRIPT_DIR}/docker-compose.yaml" "${WORK_DIR}/"
+else
+    echo "ERROR: docker-compose.yaml not found in ${SCRIPT_DIR}"
+    rm -rf "${WORK_DIR}"
+    exit 1
+fi
+
+# install.sh ships with __GENESIS_VERSION__ and __ORION_VERSION__ placeholders.
+# sed substitutes the actual version values at build time so the installed
+# script on the target machine does not require any version arguments.
+if [ -f "${SCRIPT_DIR}/install.sh" ]; then
+    sed "s/__GENESIS_VERSION__/${GENESIS_VERSION}/g; s/__ORION_VERSION__/${ORION_VERSION}/g" \
+        "${SCRIPT_DIR}/install.sh" > "${WORK_DIR}/install.sh"
+    chmod +x "${WORK_DIR}/install.sh"
+else
+    echo "ERROR: install.sh not found in ${SCRIPT_DIR}"
+    rm -rf "${WORK_DIR}"
+    exit 1
+fi
+
+if [ -f "${SCRIPT_DIR}/templates/generate-extra-vars.py.in" ]; then
+    cp "${SCRIPT_DIR}/templates/generate-extra-vars.py.in" "${WORK_DIR}/generate-extra-vars.py"
+    chmod +x "${WORK_DIR}/generate-extra-vars.py"
+else
+    echo "ERROR: templates/generate-extra-vars.py.in not found"
+    rm -rf "${WORK_DIR}"
+    exit 1
+fi
+
+# values.yaml also contains version placeholders substituted at build time.
+if [ -f "${SCRIPT_DIR}/templates/values.yaml.in" ]; then
+    sed "s/__GENESIS_VERSION__/${GENESIS_VERSION}/g; s/__ORION_VERSION__/${ORION_VERSION}/g" \
+        "${SCRIPT_DIR}/templates/values.yaml.in" > "${WORK_DIR}/values.yaml"
+else
+    echo "ERROR: templates/values.yaml.in not found"
+    rm -rf "${WORK_DIR}"
+    exit 1
+fi
+
+# Pull the ingress-nginx Helm chart from the official repo and generate a
+# local index.yaml so the git server can serve it as a Helm repository.
+# INGRESS_NGINX_VERSION defaults to 4.12.1 if not set in the environment.
+helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx
+helm pull ingress-nginx/ingress-nginx \
+    --version "${INGRESS_NGINX_VERSION:-4.12.1}" \
+    -d "${WORK_DIR}/helm-charts/" \
+    --untar=false
+helm repo index "${WORK_DIR}/helm-charts/"
+
+# Copy helper scripts (update_dns.sh, debug.sh) if they exist. These are
+# optional — the install will succeed without them.
+for script in update_dns.sh debug.sh; do
+    if [ -f "${SCRIPT_DIR}/${script}" ]; then
+        cp "${SCRIPT_DIR}/${script}" "${WORK_DIR}/"
+        chmod +x "${WORK_DIR}/${script}"
+    fi
+done
+
+# Fetch the latest juno-oneclick.tar.gz release from the K8s-Playbooks repo.
+# This is the singularity container that wraps Ansible and performs the
+# actual K3s install + Juno deployment on the target machine.
+JUNO_ONECLICK_URL=$(curl -sL "https://api.github.com/repos/juno-fx/K8s-Playbooks/releases/latest" | \
+    grep -o '"browser_download_url": *"[^"]*juno-oneclick\.tar\.gz"' | \
+    cut -d '"' -f4)
+curl -sL "${JUNO_ONECLICK_URL}" -o "${WORK_DIR}/juno-oneclick.tar.gz"
+
+# Package the entire work directory into a single tar.gz archive, then remove
+# the uncompressed directory to reclaim disk space.
+echo "[bundle] packaging ${BUNDLE_NAME}.tar.gz"
 cd "${SCRIPT_DIR}"
 tar -czf "${BUNDLE_NAME}.tar.gz" "${BUNDLE_NAME}"
-
-echo ""
-echo "=== Cleanup ==="
 rm -rf "${WORK_DIR}"
 
-echo ""
-echo "=== Done ==="
-echo "Bundle created: ${BUNDLE_NAME}.tar.gz"
 ls -lh "${SCRIPT_DIR}/${BUNDLE_NAME}.tar.gz"

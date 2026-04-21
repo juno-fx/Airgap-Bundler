@@ -1,0 +1,6 @@
+mirrors:
+  docker.io:
+  registry.k8s.io:
+  nvcr.io:
+  quay.io:
+  ghcr.io:
