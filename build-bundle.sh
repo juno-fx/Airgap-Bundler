@@ -22,7 +22,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 #   - Which git tag is cloned for each deployment repo
 #   - The version strings baked into install.sh and values.yaml at build time
 GENESIS_VERSION="3.0.2"
-ORION_VERSION="3.1.0"
+ORION_VERSION="3.1.1"
 
 BUNDLE_NAME="genesis-${GENESIS_VERSION}-orion-${ORION_VERSION}"
 WORK_DIR="${SCRIPT_DIR}/${BUNDLE_NAME}"
