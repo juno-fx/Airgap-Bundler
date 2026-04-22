@@ -8,7 +8,7 @@
 #   - K3s airgap image tarball (system images for K3s embedded registry)
 #   - Application images from images.txt saved as tars
 #   - Bare git repositories (Genesis, Orion, Terra, Juno-Bootstrap)
-#   - Helm charts (ingress-nginx)
+#   - Helm charts (ingress-nginx, gpu-operator)
 #   - Ansible installer (juno-oneclick.tar.gz)
 #   - Rendered install.sh and values.yaml with versions baked in
 #
@@ -40,6 +40,10 @@ DOCKER_IMAGES=(
 # Ansible will install on the target. The SHA256 checksum is verified against
 # the official K3s release checksum file before bundling.
 K3S_VERSION="v1.33.1+k3s1"
+
+# Helm chart versions to include in the bundle.
+INGRESS_NGINX_VERSION="4.12.1"
+GPU_OPERATOR_VERSION="v25.10.1"
 
 show_help() {
     cat << EOF
@@ -169,11 +173,15 @@ else
     exit 1
 fi
 
-# install.sh ships with __GENESIS_VERSION__ and __ORION_VERSION__ placeholders.
-# sed substitutes the actual version values at build time so the installed
-# script on the target machine does not require any version arguments.
+# install.sh ships with version placeholders substituted at build time so the
+# installed script on the target machine has all versions baked in.
 if [ -f "${SCRIPT_DIR}/install.sh" ]; then
-    sed "s/__GENESIS_VERSION__/${GENESIS_VERSION}/g; s/__ORION_VERSION__/${ORION_VERSION}/g" \
+    sed \
+        -e "s/__GENESIS_VERSION__/${GENESIS_VERSION}/g" \
+        -e "s/__ORION_VERSION__/${ORION_VERSION}/g" \
+        -e "s/__INGRESS_NGINX_VERSION__/${INGRESS_NGINX_VERSION}/g" \
+        -e "s/__GPU_OPERATOR_VERSION__/${GPU_OPERATOR_VERSION}/g" \
+        -e "s/__TERRA_VERSION__/main/g" \
         "${SCRIPT_DIR}/install.sh" > "${WORK_DIR}/install.sh"
     chmod +x "${WORK_DIR}/install.sh"
 else
@@ -206,9 +214,18 @@ fi
 # INGRESS_NGINX_VERSION defaults to 4.12.1 if not set in the environment.
 helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx
 helm pull ingress-nginx/ingress-nginx \
-    --version "${INGRESS_NGINX_VERSION:-4.12.1}" \
+    --version "${INGRESS_NGINX_VERSION}" \
     -d "${WORK_DIR}/helm-charts/" \
     --untar=false
+
+# Pull the NVIDIA GPU Operator Helm chart from NGC so it can be served by
+# the local Helm repository on the target machine.
+helm repo add nvidia https://helm.ngc.nvidia.com/nvidia
+helm pull nvidia/gpu-operator \
+    --version "${GPU_OPERATOR_VERSION}" \
+    -d "${WORK_DIR}/helm-charts/" \
+    --untar=false
+
 helm repo index "${WORK_DIR}/helm-charts/"
 
 # Copy helper scripts (update_dns.sh, debug.sh) if they exist. These are
