@@ -40,7 +40,7 @@ Usage: $(basename "$0") [OPTIONS]
 Install airgap bundle with K3s and Juno.
 
 OPTIONS:
-    --public-ip IP                 Public IP for git server (defaults to eth1 detection)
+    --public-ip IP                 Public IP for git server (required)
     --genesis-host HOST            Genesis FQDN (required)
     --basic-auth-email EMAIL       Basic auth email
     --basic-auth-password PASSWORD Basic auth password (or use --basic-auth-password-file)
@@ -102,17 +102,48 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-if [ -n "$PUBLIC_IP" ]; then
-    GIT_SERVER_IP="$PUBLIC_IP"
-else
-    # Auto-detect the host-only network IP from eth1 (VirtualBox/Vagrant convention).
-    # On bare-metal installs, pass --public-ip explicitly.
-    GIT_SERVER_IP=$(ip addr show eth1 2>/dev/null | grep 'inet ' | awk '{print $2}' | cut -d'/' -f1)
-    if [ -z "$GIT_SERVER_IP" ]; then
-        echo "ERROR: Could not detect host-only network IP. Use --public-ip to specify manually."
-        exit 1
-    fi
+if [ -z "$PUBLIC_IP" ]; then
+    echo "ERROR: --public-ip is required"
+    show_help
+    exit 1
 fi
+GIT_SERVER_IP="$PUBLIC_IP"
+SERVICES_STARTED=0
+
+print_connection_info() {
+    if [ "$SERVICES_STARTED" -eq 0 ]; then
+        return
+    fi
+    cat << EOF > /dev/tty
+
+================================================
+  Juno Connection Information
+================================================
+
+Git Repositories:
+
+  Genesis-Deployment (v__GENESIS_VERSION__)
+  http://${GIT_SERVER_IP}:8080/git/Genesis-Deployment.git
+
+  Orion-Deployment (v__ORION_VERSION__)
+  http://${GIT_SERVER_IP}:8080/git/Orion-Deployment.git
+
+  Terra-Official-Plugins (__TERRA_VERSION__)
+  http://${GIT_SERVER_IP}:8080/git/Terra-Official-Plugins.git
+
+Helm Repository:
+
+  ingress-nginx (__INGRESS_NGINX_VERSION__)
+  http://${GIT_SERVER_IP}:8081
+
+  gpu-operator (__GPU_OPERATOR_VERSION__)
+  http://${GIT_SERVER_IP}:8081
+
+================================================
+EOF
+}
+
+trap print_connection_info EXIT
 
 # Prompt helpers - MUST run before redirecting logs to avoid leaking secrets.
 # Reads are taken from /dev/tty so they are not captured by the tee log redirect.
@@ -176,7 +207,9 @@ TITAN_EMAIL="$BASIC_AUTH_EMAIL"
 
 # Redirect all subsequent output (stdout + stderr) to the log file AND the
 # terminal. This must come AFTER the prompts above to avoid leaking secrets.
+set +o pipefail
 exec > >(tee -a "${LOG_FILE}") 2>&1
+set -o pipefail
 
 echo "Juno Airgap Installer"
 echo "Log: ${LOG_FILE}"
@@ -194,6 +227,7 @@ fi
 
 echo "[services] starting git server + helm repo"
 docker compose up -d
+SERVICES_STARTED=1
 
 echo "[k3s] extracting juno-oneclick"
 if [ ! -f "${ONECLICK_ARCHIVE}" ]; then

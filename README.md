@@ -18,6 +18,7 @@ cd /opt
 tar -xzf genesis-*.tar.gz
 cd genesis-*/
 sudo ./install.sh \
+  --public-ip 192.168.1.10 \
   --genesis-host juno.example.com \
   --basic-auth-email admin@example.com \
   --basic-auth-password yourpassword \
@@ -30,7 +31,7 @@ sudo ./install.sh \
 | Tool     | Version | Purpose                                          |
 |----------|---------|--------------------------------------------------|
 | Docker   | Latest  | Pull and save container images                   |
-| Helm     | Latest  | Pull ingress-nginx Helm chart                    |
+| Helm     | Latest  | Pull ingress-nginx and gpu-operator Helm charts  |
 | Git      | Latest  | Clone deployment repositories                    |
 | curl     | Latest  | Download K3s airgap images and Juno installer    |
 | Internet | Outbound HTTPS | GitHub, Docker Hub, registry.k8s.io, ghcr.io, quay.io, nvcr.io |
@@ -120,6 +121,7 @@ cd /opt
 tar -xzf genesis-*.tar.gz
 cd genesis-*/
 sudo ./install.sh \
+  --public-ip 192.168.1.10 \
   --genesis-host juno.example.com \
   --basic-auth-email admin@example.com \
   --basic-auth-password yourpassword \
@@ -159,6 +161,25 @@ sudo systemctl status k3s
 cat /etc/rancher/k3s/config.yaml
 cat /etc/rancher/k3s/registries.yaml
 ```
+
+## Post-Install Connection Information
+
+After installation completes, the installer prints fully rendered URLs. Use these to configure ArgoCD application sources in the UI.
+
+**Git Repositories** (port 8080):
+
+| Repository | Version | URL |
+|---|---|---|
+| Genesis-Deployment | v3.0.2 | `http://<GIT_SERVER_IP>:8080/git/Genesis-Deployment.git` |
+| Orion-Deployment | v3.1.1 | `http://<GIT_SERVER_IP>:8080/git/Orion-Deployment.git` |
+| Terra-Official-Plugins | main | `http://<GIT_SERVER_IP>:8080/git/Terra-Official-Plugins.git` |
+
+**Helm Repository** (port 8081): `http://<GIT_SERVER_IP>:8081`
+
+| Chart | Version |
+|---|---|
+| ingress-nginx | 4.12.1 |
+| gpu-operator | v25.10.1 |
 
 ## Useful Resources
 
