@@ -9,7 +9,7 @@ docker.io/junoinnovations/metrics-gatherer:v1.1.0
 
 # Orion deployments
 docker.io/junoinnovations/kuiper:v4.7.1
-docker.io/junoinnovations/hubble:v6.9.1
+docker.io/junoinnovations/hubble:v6.9.2
 
 # === ArgoCD (from docs) ===
 
