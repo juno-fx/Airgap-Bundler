@@ -21,8 +21,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # Version of Genesis and Orion to bundle. These control:
 #   - Which git tag is cloned for each deployment repo
 #   - The version strings baked into install.sh and values.yaml at build time
-GENESIS_VERSION="6.0.0"
-ORION_VERSION="4.8.0"
+GENESIS_VERSION="6.1.0"
+ORION_VERSION="4.8.1"
 
 BUNDLE_NAME="genesis-${GENESIS_VERSION}-orion-${ORION_VERSION}"
 WORK_DIR="${SCRIPT_DIR}/${BUNDLE_NAME}"
